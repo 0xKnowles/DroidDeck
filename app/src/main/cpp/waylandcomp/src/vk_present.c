@@ -463,18 +463,23 @@ static int dev_init(void) {
     }
     g_vk.GetPhysicalDeviceMemoryProperties(g_pd, &g_memprops);
 
-    /* Verify the dmabuf-import extensions are present, and log any that are missing. */
-    const char *dev_exts[7] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, "VK_KHR_external_memory_fd",
-                               "VK_EXT_external_memory_dma_buf", "VK_EXT_image_drm_format_modifier",
-                               "VK_KHR_image_format_list", NULL, NULL};
-    uint32_t n_dev_exts = 5;
+    /* The dmabuf-import extensions: enabled where the driver has them, logged where it does not.
+     * Turnip has all four. A system driver (Mali, Xclipse) may lack one, and asking for it anyway
+     * fails vkCreateDevice - no screen at all, where without it clients still draw through wl_shm
+     * (no modifiers are advertised then, see vkp_dmabuf_modifiers). The swapchain is the one
+     * extension the compositor cannot do without. */
+    static const char *const dmabuf_exts[4] = {"VK_KHR_external_memory_fd", "VK_EXT_external_memory_dma_buf",
+                                               "VK_EXT_image_drm_format_modifier", "VK_KHR_image_format_list"};
+    const char *dev_exts[7] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    uint32_t n_dev_exts = 1;
     uint32_t ne = 0;
     g_vk.EnumerateDeviceExtensionProperties(g_pd, NULL, &ne, NULL);
     VkExtensionProperties *exts = calloc(ne ? ne : 1, sizeof(*exts));
     g_vk.EnumerateDeviceExtensionProperties(g_pd, NULL, &ne, exts);
-    for (unsigned i = 0; i < 5; i++)
-        if (!has_ext(exts, ne, dev_exts[i]))
-            LOGE("present: driver MISSING %s (dmabuf import will fail)", dev_exts[i]);
+    for (unsigned i = 0; i < 4; i++) {
+        if (has_ext(exts, ne, dmabuf_exts[i])) dev_exts[n_dev_exts++] = dmabuf_exts[i];
+        else LOGE("present: driver MISSING %s (dmabuf import will fail; clients fall back to wl_shm)", dmabuf_exts[i]);
+    }
     /* HDR sessions only: the HDR10 swapchain (frame generation) can carry the game's metadata. */
     int want_hdr_md = 0;
     if (droiddeck_color_requested()) {

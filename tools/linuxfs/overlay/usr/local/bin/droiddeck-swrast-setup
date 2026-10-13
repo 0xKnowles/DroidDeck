@@ -1,0 +1,103 @@
+#!/bin/bash
+# Puts Mesa's lavapipe (software Vulkan, Arch Linux ARM's vulkan-swrast) into the runtime, for a
+# GPU the runtime's Turnip cannot drive: Mali, Xclipse, PowerVR. Their kernel drivers are not KGSL,
+# so Turnip finds no device and gamescope exits before Steam starts. On lavapipe the session runs
+# on the CPU instead: the client and light games draw, slowly; the phone's own Vulkan driver still
+# puts each frame on the screen, in the app's compositor. Run by the app under proot's fake root
+# (pacman refuses any other uid), before a session, and only on such a device (SoftwareVulkan).
+#
+# Like droiddeck-flatpak-setup, pacman only fetches and checks the packages against the Arch Linux
+# ARM keyring, with a database of its own; they are unpacked without hooks. vulkan-swrast does not
+# depend on Mesa's own package, so the runtime's Mesa (Zink, Turnip) is left exactly as it was.
+#
+#   droiddeck-swrast-setup        install or repair; prints "== STEP ..." milestones
+set -u
+export LANG=C.UTF-8
+step() { echo "== STEP $*"; }
+fail() { echo "== FAIL $*"; exit 1; }
+
+LIB=/usr/lib/libvulkan_lvp.so
+ICD=/usr/share/vulkan/icd.d/lvp_icd.aarch64.json
+WORK=/var/cache/droiddeck-swrast
+CONF=$WORK/pacman.conf
+mkdir -p "$WORK/pkg" "$WORK/db" || fail "cannot create $WORK"
+
+# The image's pacman.conf names a download user this rootfs does not have (only root exists) and a
+# sandbox proot cannot set up. Its one mirror is plain HTTP; these serve the same repos over TLS.
+{ for m in https://ca.us.mirror.archlinuxarm.org https://fl.us.mirror.archlinuxarm.org \
+           https://de3.mirror.archlinuxarm.org https://nl.mirror.archlinuxarm.org; do
+    echo "Server = $m/\$arch/\$repo"; done
+  grep '^Server' /etc/pacman.d/mirrorlist 2>/dev/null; } > "$WORK/mirrorlist"
+sed -e 's/^DownloadUser/#DownloadUser/' \
+    -e 's/^\[options\]/[options]\nDisableSandbox/' \
+    -e "s#^Include *= */etc/pacman.d/mirrorlist#Include = $WORK/mirrorlist#" \
+    /etc/pacman.conf > "$CONF" || fail "no /etc/pacman.conf"
+
+if [ ! -f /etc/pacman.d/gnupg/pubring.gpg ] && [ ! -f /etc/pacman.d/gnupg/pubring.kbx ]; then
+  step "Preparing the package keyring"
+  pacman-key --init >/dev/null 2>&1 || fail "pacman-key --init failed"
+  pacman-key --populate archlinuxarm >/dev/null 2>&1 || fail "pacman-key --populate failed"
+fi
+
+step "Reading the package lists"
+pacman --config "$CONF" --dbpath "$WORK/db" --noconfirm -Sy >/dev/null 2>&1 \
+  || pacman --config "$CONF" --dbpath "$WORK/db" --noconfirm -Sy 2>&1 | tail -3 \
+  || fail "could not reach the Arch Linux ARM mirrors"
+[ -f "$WORK/db/sync/extra.db" ] || fail "could not reach the Arch Linux ARM mirrors"
+
+# Fetch, check and unpack the named packages.
+install_packages() {
+  local out rc name ver file
+  out=$(pacman --config "$CONF" --dbpath "$WORK/db" --cachedir "$WORK/pkg" --noconfirm -Sw -dd "$@" 2>&1)
+  rc=$?
+  echo "$out" | grep -vE '^\s*$' | tail -4
+  [ $rc -eq 0 ] || fail "download failed: $*"
+  for name in "$@"; do
+    ver=$(pacman --config "$CONF" --dbpath "$WORK/db" -Sp --print-format '%v' -dd "$name" 2>/dev/null | tail -1)
+    file=$(ls "$WORK/pkg/$name-$ver-"*.pkg.tar.* 2>/dev/null | grep -v '\.sig$' | head -1)
+    [ -n "$file" ] || fail "no package file for $name $ver"
+    bsdtar -xpf "$file" -C / --exclude .PKGINFO --exclude .BUILDINFO --exclude .MTREE --exclude .INSTALL \
+      || fail "could not unpack $name"
+    echo "$name $ver" >> "$WORK/installed.new"
+  done
+}
+
+step "Downloading lavapipe"
+rm -f "$WORK/installed.new"
+install_packages vulkan-swrast
+
+# The repos move ahead of the image: a newer lavapipe can link a newer LLVM or SPIRV-Tools than
+# the runtime carries. Those land beside the old ones (their sonames are versioned), so only what
+# the library actually lacks is fetched.
+missing_packages() {
+  ldd "$LIB" 2>&1 | sed -n 's/^[[:space:]]*\([^[:space:]]*\) => not found.*/\1/p' | sort -u | while read -r so; do
+    case $so in
+      libLLVM*) echo llvm-libs ;;
+      libSPIRV-Tools*) echo spirv-tools ;;
+      libdisplay-info*) echo libdisplay-info ;;
+      libxcb-keysyms*) echo xcb-util-keysyms ;;
+      libxshmfence*) echo libxshmfence ;;
+      libdrm*) echo libdrm ;;
+      libwayland-client*) echo wayland ;;
+      libzstd*) echo zstd ;;
+      libexpat*) echo expat ;;
+      libudev*|libsystemd*) echo systemd-libs ;;
+      *) echo "?$so" ;;
+    esac
+  done | sort -u
+}
+extra=$(missing_packages)
+unknown=$(echo "$extra" | grep '^?' | tr -d '?' | tr '\n' ' ')
+[ -z "$unknown" ] || fail "lavapipe needs libraries no known package provides: $unknown"
+if [ -n "$extra" ]; then
+  step "Downloading lavapipe's libraries"
+  # shellcheck disable=SC2086
+  install_packages $extra
+fi
+mv -f "$WORK/installed.new" "$WORK/installed"
+find "$WORK/pkg" -type f -mtime +1 -delete 2>/dev/null
+
+[ -r "$ICD" ] || fail "vulkan-swrast brought no $ICD"
+still=$(ldd "$LIB" 2>&1 | grep -E 'not found')
+[ -z "$still" ] || { echo "$still"; fail "lavapipe is missing libraries"; }
+echo "== DONE lavapipe $(sed -n 's/^vulkan-swrast //p' "$WORK/installed")"

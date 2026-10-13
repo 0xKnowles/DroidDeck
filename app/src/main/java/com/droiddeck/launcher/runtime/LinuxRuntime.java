@@ -6,6 +6,7 @@ import android.system.ErrnoException;
 import android.system.Os;
 import android.system.StructStat;
 import android.system.StructUtsname;
+import com.droiddeck.launcher.gpu.SoftwareVulkan;
 import com.droiddeck.launcher.session.SessionPrefs;
 
 
@@ -109,8 +110,15 @@ public final class LinuxRuntime {
                 && prootLoader(context).isFile();
     }
 
-    /** The Vulkan ICD manifest the rootfs ships for the device GPU, or null when it has none. */
+    /**
+     * The Vulkan ICD manifest the rootfs ships for the device GPU, or null when it has none. On a
+     * GPU Turnip cannot drive, lavapipe when it is there ({@link SoftwareVulkan}).
+     */
     public static File vulkanIcd(Context context) {
+        if (SoftwareVulkan.INSTANCE.needed()) {
+            File lvp = SoftwareVulkan.INSTANCE.icd(rootDir(context));
+            if (lvp != null) return lvp;
+        }
         File icdDir = new File(rootDir(context), "usr/share/vulkan/icd.d");
         File[] manifests = icdDir.listFiles((dir, name) -> name.endsWith(".json"));
         if (manifests == null) return null;

@@ -92,6 +92,8 @@ object SessionFiles {
             "usr/local/bin/droiddeck-flatpak" to "usr/local/bin/droiddeck-flatpak",
             "usr/local/bin/droiddeck-flatpak-setup" to "usr/local/bin/droiddeck-flatpak-setup",
             "usr/local/bin/droiddeck-flatpak-run" to "usr/local/bin/droiddeck-flatpak-run",
+            // Software Vulkan (lavapipe) for a GPU Turnip cannot drive (SoftwareVulkan).
+            "usr/local/bin/droiddeck-swrast-setup" to "usr/local/bin/droiddeck-swrast-setup",
             // The user's own AppImages, extracted at import (AppImageManager).
             "usr/local/bin/droiddeck-appimage-run" to "usr/local/bin/droiddeck-appimage-run",
             "usr/local/bin/droiddeck-script-run" to "usr/local/bin/droiddeck-script-run",

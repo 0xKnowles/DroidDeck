@@ -8,11 +8,11 @@ import java.io.File
 /**
  * Whether this device can draw a Linux session at all.
  *
- * The runtime draws with Turnip, an Adreno driver. On Mali, Xclipse and PowerVR the compositor
- * gets no usable Vulkan device and a session comes up as sound over a black screen - a failure
- * with nothing in it to read. The app cannot fix that, so it says so before the download rather
- * than after it. Adreno is recognised by what only Qualcomm's stack has: the KGSL node, or the
- * vendor's own Vulkan driver at its usual path.
+ * The runtime draws with Turnip, an Adreno driver. On Mali, Xclipse and PowerVR it finds no
+ * device: the compositor uses the phone's own Vulkan driver instead (TurnipDriver), and the runtime
+ * draws on the CPU with lavapipe (SoftwareVulkan) - slow, so the app says so before the download.
+ * Adreno is recognised by what only Qualcomm's stack has: the KGSL node, or the vendor's own
+ * Vulkan driver at its usual path.
  */
 object DeviceSupport {
     fun adreno(): Boolean =

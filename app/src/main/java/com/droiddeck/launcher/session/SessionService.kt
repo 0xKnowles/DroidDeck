@@ -355,6 +355,11 @@ class SessionService : Service() {
                 .onSuccess { if (it != null) Log.i(TAG, it) }
                 .onFailure { Log.w(TAG, "forced components", it) }
         }
+        // A GPU the runtime's Turnip cannot drive (Mali, Xclipse, PowerVR) draws on lavapipe instead;
+        // fetched once, before the guest, so the ICD chosen below is already there.
+        runCatching { com.droiddeck.launcher.gpu.SoftwareVulkan.ensure(this) }
+            .onSuccess { if (it != null) Log.i(TAG, it) }
+            .onFailure { Log.w(TAG, "software vulkan", it) }
         addClientEnvironment(guest, steamHere)
         // Where the fast path's description of proot's view goes, once the binds are known.
         val fastPathAt = guest.size

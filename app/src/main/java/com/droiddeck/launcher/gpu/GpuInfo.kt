@@ -58,7 +58,7 @@ data class GpuInfo(
             Support.TESTED -> "Supported"
             Support.UNTESTED -> if (family == Family.A7XX_LOW) "Experimental: its drivers are test builds"
                 else "Outside tested hardware (Adreno 650, 725 and newer): it may not run"
-            Support.UNSUPPORTED -> "Not supported: DroidDeck needs an Adreno (Snapdragon) GPU"
+            Support.UNSUPPORTED -> "Software rendering only: not an Adreno (Snapdragon) GPU"
         }
 
     /** [supportText] in the app's language. */
